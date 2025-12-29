@@ -1,7 +1,7 @@
 import logging
-from io import io
+from src.io import io
 from datetime import datetime
-from monitor.hybrid_fuzzer import Fuzzer
+from src.monitor.hybrid_fuzzer import Fuzzer
 
 logging.basicConfig(filename="fuzz-monitor.log",
                     level=logging.INFO,
