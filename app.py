@@ -1,4 +1,4 @@
-from monitor.monitor import Monitor
+from src.monitor.monitor import Monitor
 
 
 def main():

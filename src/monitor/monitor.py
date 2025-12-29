@@ -54,13 +54,18 @@ class Monitor:
 
             if self._check_fuzzer_plateau(metrics=metrics):
                 logging.info(f"[*] Symbolic execution needed for {sanitizer}")
-                state_dict = self.fuzzer.build_angr_state(f_path=self.config[sanitizer])
-                hook_dict = self.fuzzer.create_branch_hook(state=state_dict['state'])
-                state_sim_mgr = self.fuzzer.execute_simulation_manager(state=hook_dict['state'])
-                seeds = self.fuzzer.generate_new_seeds(
-                    state=state_sim_mgr,
-                    branch_log=hook_dict['branch log'],
-                    sym_stdin=state_dict['bit vector']
-                )
-                logging.info(f"[+] {len(seeds)} have been created for {sanitizer}!")
-                io.write_new_seeds(seeds=seeds)
+
+                try:
+                    state_dict = self.fuzzer.build_angr_state(f_path=self.config[sanitizer])
+                    hook_dict = self.fuzzer.create_branch_hook(state=state_dict['state'])
+                    state_sim_mgr = self.fuzzer.execute_simulation_manager(state=hook_dict['state'])
+                    seeds = self.fuzzer.generate_new_seeds(
+                        state=state_sim_mgr,
+                        branch_log=hook_dict['branch log'],
+                        sym_stdin=state_dict['bit vector']
+                    )
+                    logging.info(f"[+] {len(seeds)} have been created for {sanitizer}!")
+                    io.write_new_seeds(seeds=seeds)
+                except Exception as e:
+                    logging.error(f"[!] Symbolic execution failed. {str(e)}")
+                    raise RuntimeError(f"[!] Symbolic execution failed. {str(e)}")

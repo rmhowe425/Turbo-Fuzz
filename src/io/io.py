@@ -80,12 +80,24 @@ def get_frontier_seed(f_path: str) -> str:
     -------
     File path to the preferred frontier seed.
     """
+    if not path.exists(f_path):
+        logging.error(f"[!] Cannot determine frontier seed. `{f_path}` not found.")
+        raise FileNotFoundError(f"Cannot determine frontier seed. `{f_path}` not found.")
+    elif '/queue' not in f_path:
+        logging.error(f"[!] `{f_path}` does not contain valid seeds.")
+        raise FileNotFoundError(f"[!] `{f_path}` does not contain valid seeds.")
+
     queue_path = Path(f_path)
-    return sorted(
+    queue_seeds = sorted(
         queue_path.glob(pattern="id:*"),
         key=lambda p: p.stat().st_mtime,
         reverse=True
-    )[0].as_posix()
+    )
+
+    if queue_seeds:
+        return queue_seeds[0].as_posix()
+    else:
+        return ""
 
 
 def read_frontier_seed(f_path: str) -> bytes:
@@ -101,6 +113,10 @@ def read_frontier_seed(f_path: str) -> bytes:
     -------
     File contents of a frontier seed.
     """
+    if not path.exists(f_path):
+        logging.error(f"[!] Cannot read frontier seed. `{f_path}` not found.")
+        raise FileNotFoundError(f"Cannot read frontier seed. `{f_path}` not found.")
+
     try:
         with open(f_path, 'rb') as fil:
             return fil.read()
@@ -122,7 +138,7 @@ def write_new_seeds(seeds: list[bytes]):
         fuzzing coverage.
     """
     for idx, seed in enumerate(seeds):
-        filename = f'queue/new_seed{idx}'
+        filename = f'queue1/new_seed{idx}'
 
         try:
             with open(filename, 'wb') as fil:

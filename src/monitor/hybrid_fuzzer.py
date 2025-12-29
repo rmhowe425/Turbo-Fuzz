@@ -29,8 +29,12 @@ class Fuzzer:
         -------
         Dictionary containing the Angr state object and bit vector.
         """
-        queue_dir = '/queue'
+        queue_dir = '/queue1'
         frontier_seed = io.get_frontier_seed(f_path=f_path + queue_dir)
+
+        if not frontier_seed:
+            raise RuntimeError("`frontier_seed` cannot be an empty string.")
+
         input_bytes = io.read_frontier_seed(f_path=frontier_seed)
         sym_stdin = claripy.BVS("stdin", len(input_bytes) * 8)
         state = self.project.factory.full_init_state(
