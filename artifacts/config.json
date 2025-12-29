@@ -1,0 +1,6 @@
+{
+  "target_binary": "",
+  "asan_directory": "",
+  "msan_dictory": "",
+  "ubsan_directory": ""
+}
