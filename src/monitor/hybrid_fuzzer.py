@@ -36,6 +36,7 @@ class Fuzzer:
         # Safety options
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
+        state.options.add(options.CONCRETIZE)
 
         # Insert symbolic input file
         state.fs.insert(
