@@ -16,51 +16,45 @@ class Fuzzer:
                                )
 
     def build_angr_state(self, f_path: str) -> dict:
-        """
-        Creates an Angr state object based on an AFL++
-        harness and a frontier seed.
-
-        Parameters
-        ----------
-        f_path : str
-            File path to the chosen frontier harness.
-
-        Returns
-        -------
-        Dictionary containing the Angr state object and bit vector.
-        """
-        queue_dir = '/queue'
+        queue_dir = "/queue"
         frontier_seed = io.get_frontier_seed(f_path=f_path + queue_dir)
 
         if not frontier_seed:
-            raise RuntimeError("`frontier_seed` cannot be an empty string.")
+            raise RuntimeError("`frontier_seed` cannot be empty")
 
-        input_bytes = io.read_frontier_seed(f_path=frontier_seed)
+        input_bytes = io.read_frontier_seed(frontier_seed)
+
         sym_file = claripy.BVS("xls_file", len(input_bytes) * 8)
         concrete_bvv = claripy.BVV(input_bytes, len(input_bytes) * 8)
-        state = self.project.factory.entry_state(args=["prog", "input.xls"])
+
+        # Let angr handle loading & mapping
+        state = self.project.factory.entry_state(
+            args=["prog", "input.xls"],
+            auto_load_libs=True,  # OK here
+        )
+
+        # Safety options
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
 
-        loader = self.project.loader
-        base = loader.main_object.mapped_base
-
-        for seg in loader.main_object.segments:
-            seg_start = base + seg.vaddr
-            seg_bytes = loader.memory.load(seg.vaddr, seg.memsize)
-            state.memory.store(seg_start, seg_bytes)
-
+        # Insert symbolic input file
         state.fs.insert(
             "input.xls",
             SimFile(
                 name="input.xls",
                 content=sym_file,
                 size=len(input_bytes),
-                has_end=True
+                has_end=True,
             )
         )
+
+        # Correct preconstrain order
         state.preconstrainer.preconstrain(concrete_bvv, sym_file)
-        return {'state': state, 'bit vector': sym_file}
+
+        return {
+            "state": state,
+            "bit vector": sym_file,
+        }
 
     def create_branch_hook(self, state: SimState) -> dict:
         """
