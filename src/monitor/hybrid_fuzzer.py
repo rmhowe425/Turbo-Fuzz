@@ -17,47 +17,41 @@ class Fuzzer:
                                )
 
     def build_angr_state(self, f_path: str) -> dict:
-        queue_dir = "/queue"
-        frontier_seed = io.get_frontier_seed(f_path=f_path + queue_dir)
+        """
+        Builds an angr state that calls LLVMFuzzerTestOneInput with
+        a symbolic byte buffer and symbolic size.
+        """
 
-        if not frontier_seed:
-            raise RuntimeError("`frontier_seed` cannot be empty")
+        # size of symbolic input (tune as needed)
+        SYM_BUFFER_SIZE = 256
 
-        input_bytes = io.read_frontier_seed(frontier_seed)
+        # Create symbolic buffer & symbolic size
+        symbuf = claripy.BVS("symbuf", 8 * SYM_BUFFER_SIZE)
+        symsize = claripy.BVS("symsize", 64)  # size_t is 64 bits on most systems
 
-        sym_file = claripy.BVS("xls_file", len(input_bytes) * 8)
-        concrete_bvv = claripy.BVV(input_bytes, len(input_bytes) * 8)
+        # Find the address of the fuzz target function
+        fuzz_sym = self.project.loader.find_symbol("LLVMFuzzerTestOneInput")
+        if fuzz_sym is None:
+            raise RuntimeError("Could not find LLVMFuzzerTestOneInput symbol")
+        fuzz_addr = fuzz_sym.rebased_addr
 
-        # Let angr handle loading & mapping
-        state = self.project.factory.entry_state(
-            args=["prog", "input.xls"],
-            auto_load_libs=True,  # OK here
+        # Create a call_state that simulates calling the function
+        # with (symbuf, symsize) arguments
+        state = self.project.factory.call_state(
+            fuzz_addr,
+            symbuf,
+            symsize,
         )
 
-        # Safety options
+        # Safety options to reduce solver blow‑up
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
         state.options.add(options.NO_SYMBOLIC_JUMP_RESOLUTION)
-        state.options.add(options.CONCRETIZE)
 
-        # Insert symbolic input file
-        state.fs.insert(
-            "input.xls",
-            SimFile(
-                name="input.xls",
-                content=sym_file,
-                size=len(input_bytes),
-                has_end=True,
-            )
-        )
+        # You could also constrain symsize if desired:
+        # state.solver.add(symsize <= SYM_BUFFER_SIZE)
 
-        # Correct preconstrain order
-        state.preconstrainer.preconstrain(concrete_bvv, sym_file)
-
-        return {
-            "state": state,
-            "bit vector": sym_file,
-        }
+        return {"state": state, "bit vector": symbuf}
 
     def create_branch_hook(self, state: SimState) -> dict:
         """
@@ -93,34 +87,32 @@ class Fuzzer:
 
         return {'state': state, 'branch log': fork_log}
 
-
     def execute_simulation_manager(self, state: SimState) -> SimState:
+        """
+        Bounded symbolic execution that drops
+        states which errored or have symbolic IP.
+        """
         simgr = self.project.factory.simgr(state)
 
-        # Use LoopSeer, no Veritesting for safer control-flow
-        simgr.use_technique(exploration_techniques.LoopSeer(bound=3))
-
-        MAX_ACTIVE = 40
+        # Bound the search to shallow execution
         MAX_STEPS = 200
+        MAX_ACTIVE = 40
         steps = 0
 
         while simgr.active and steps < MAX_STEPS:
-            # Step all active states once
+            # Step them forward
             simgr.step()
 
-            # If any states errored, remove them
-            if simgr.errored:
-                # For each ErrorRecord, drop its state from active
-                for rec in simgr.errored:
-                    bad_state = rec.state
-                    simgr.drop(lambda s: s is bad_state, stash="active")
-                # Clear the errored list to reset
-                simgr.errored.clear()
+            # Drop any states that error during stepping
+            errored_records = list(simgr.errored)
+            for rec in errored_records:
+                bad = rec.state
+                simgr.drop(lambda s: s is bad, stash="active")
 
-            # Drop any states with symbolic IP to avoid further invalid jumps
+            # Drop states with symbolic instruction pointer
             simgr.drop(lambda s: s.solver.symbolic(s.regs.ip), stash="active")
 
-            # Cap active states
+            # Limit active state count
             if len(simgr.active) > MAX_ACTIVE:
                 simgr.active = simgr.active[:MAX_ACTIVE]
 
