@@ -42,10 +42,13 @@ class Fuzzer:
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
 
+        loader = self.project.loader
+        base = loader.main_object.mapped_base
 
-        base_addr = self.project.loader.main_object.mapped_base
-        for seg in self.project.loader.main_object.segments:
-            state.memory.store(base_addr + seg.vaddr, seg.content)
+        for seg in loader.main_object.segments:
+            seg_start = base + seg.vaddr
+            seg_bytes = loader.memory.load(seg.vaddr, seg.memsize)
+            state.memory.store(seg_start, seg_bytes)
 
         state.fs.insert(
             "input.xls",
