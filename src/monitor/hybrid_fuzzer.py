@@ -151,6 +151,9 @@ class Fuzzer:
         input_len = len(sym_stdin) // 8
 
         for _, cond, _ in branch_log:
+            if cond.is_true() or cond.is_false():
+                continue
+
             state_copy = state.copy()
             state_copy.preconstrainer.remove_preconstraints()
             flipped = claripy.Not(cond)
@@ -164,4 +167,4 @@ class Fuzzer:
                                                    )
                 seeds.append(new_input)
 
-        return seeds
+        return list(set(seeds))
