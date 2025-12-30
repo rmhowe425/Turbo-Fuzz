@@ -98,30 +98,29 @@ class Fuzzer:
     def execute_simulation_manager(self, state: SimState) -> SimState:
         simgr = self.project.factory.simgr(state)
 
-        # Use LoopSeer but avoid Veritesting until we stabilize
-        simgr.use_technique(exploration_techniques.LoopSeer(bound=4))
+        # Only LoopSeer — no Veritesting to reduce symbolic jumps
+        simgr.use_technique(exploration_techniques.LoopSeer(bound=3))
 
-        steps = 0
         MAX_ACTIVE = 40
         MAX_STEPS = 200
+        steps = 0
 
         while simgr.active and steps < MAX_STEPS:
-            new_active = []
+            # Step and let angr categorize errors into simgr.errored
+            simgr.step()
 
-            for st in simgr.active:
-                try:
-                    simgr._stash['active'] = [st]
-                    simgr.step()  # step only this one state
-                    # after stepping, move successor states into new_active
-                    new_active.extend(simgr.active)
-                except SimEngineError:
-                    # This state tried to execute unmapped memory → drop it
-                    pass
+            # Remove errored states — drop them
+            if simgr.errored:
+                # Clear errored stash and drop states
+                simgr.errored = []
 
-            # Replace active states with survivors
-            simgr.active = new_active
+            # Optionally filter out states with symbolic IP so they don't continue
+            simgr.active = [
+                st for st in simgr.active
+                if not st.solver.symbolic(st.regs.ip)
+            ]
 
-            # Trim state explosion
+            # Trim explosion
             if len(simgr.active) > MAX_ACTIVE:
                 simgr.active = simgr.active[:MAX_ACTIVE]
 
