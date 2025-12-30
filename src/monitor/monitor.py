@@ -53,8 +53,7 @@ class Monitor:
                 continue
 
             metrics = io.read_fuzzer_stats(f_path=self.config[sanitizer] + '/fuzzer_stats')
-
-            if not self._check_fuzzer_plateau(metrics=metrics):
+            if self._check_fuzzer_plateau(metrics=metrics):
                 logging.info(f"[*] Symbolic execution needed for {sanitizer}")
 
                 try:
@@ -67,7 +66,7 @@ class Monitor:
                         sym_stdin=state_dict['bit vector']
                     )
                     logging.info(f"[+] {len(seeds)} have been created for {sanitizer}!")
-                    io.write_new_seeds(seeds=seeds)
+                    io.write_new_seeds(f_path=self.config[sanitizer], seeds=seeds)
                 except Exception as e:
                     logging.error(f"[!] Symbolic execution failed. {str(e)}")
                     raise RuntimeError(f"[!] Symbolic execution failed. {str(e)}")

@@ -38,11 +38,14 @@ class Fuzzer:
         input_bytes = io.read_frontier_seed(f_path=frontier_seed)
         sym_file = claripy.BVS("xls_file", len(input_bytes) * 8)
         concrete_bvv = claripy.BVV(input_bytes, len(input_bytes) * 8)
-        state = self.project.factory.full_init_state(
-            args=["prog", "input.xls"]
-        )
+        state = self.project.factory.entry_state(args=["prog", "input.xls"])
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
+
+
+        base_addr = self.project.loader.main_object.mapped_base
+        for seg in self.project.loader.main_object.segments:
+            state.memory.store(base_addr + seg.vaddr, seg.content)
 
         state.fs.insert(
             "input.xls",
@@ -53,7 +56,7 @@ class Fuzzer:
                 has_end=True
             )
         )
-        state.preconstrainer.preconstrain(sym_file, concrete_bvv)
+        state.preconstrainer.preconstrain(concrete_bvv, sym_file)
         return {'state': state, 'bit vector': sym_file}
 
     def create_branch_hook(self, state: SimState) -> dict:

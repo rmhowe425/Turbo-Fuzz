@@ -125,20 +125,23 @@ def read_frontier_seed(f_path: str) -> bytes:
         raise RuntimeError(f"Error reading frontier seed. {str(e)}")
 
 
-def write_new_seeds(seeds: list[bytes]):
+def write_new_seeds(f_path: str, seeds: list[bytes]):
     """
     List of new seeds to be used by AFL++ to gain
     coverage in an application being fuzzed.
 
     Parameters
     ----------
+    f_path: str
+        File path to write new seeds to.
     seeds : list[bytes]
         List of new seeds to be written to disk
         that will allow AFL++ to gain additional
         fuzzing coverage.
     """
     for idx, seed in enumerate(seeds):
-        filename = f'queue1/new_seed{idx}'
+        filename = f'queue/new_seed{idx}'
+        print(f_path + filename)
 
         try:
             with open(filename, 'wb') as fil:
