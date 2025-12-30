@@ -1,6 +1,7 @@
 import claripy
 from src.io import io
 from claripy.ast import BV
+from angr.errors import SimEngineError
 from angr import exploration_techniques, options, Project, SimFile, SimState, BP_BEFORE
 
 
@@ -92,45 +93,39 @@ class Fuzzer:
 
         return {'state': state, 'branch log': fork_log}
 
+    from angr.errors import SimEngineError
+
     def execute_simulation_manager(self, state: SimState) -> SimState:
-        """
-        Creates a simulation manager and initiates symbolic
-        execution against our state object.
+        simgr = self.project.factory.simgr(state)
 
-        Parameters
-        ----------
-        state: SimState
-            AFL++ harness execution state after running a frontier
-            seed against the harness.
+        # Use LoopSeer but avoid Veritesting until we stabilize
+        simgr.use_technique(exploration_techniques.LoopSeer(bound=4))
 
-        Returns
-        -------
-        Updated state object.
-        """
         steps = 0
         MAX_ACTIVE = 40
         MAX_STEPS = 200
-        simgr = self.project.factory.simgr(state)
-        simgr.use_technique(exploration_techniques.Veritesting())
-        simgr.use_technique(exploration_techniques.LoopSeer(bound=4))
 
         while simgr.active and steps < MAX_STEPS:
-            next_active = []
+            new_active = []
+
             for st in simgr.active:
-                # if the instruction pointer is symbolic, drop the state
-                if st.solver.symbolic(st.regs.ip):
-                    continue
-                next_active.append(st)
+                try:
+                    simgr._stash['active'] = [st]
+                    simgr.step()  # step only this one state
+                    # after stepping, move successor states into new_active
+                    new_active.extend(simgr.active)
+                except SimEngineError:
+                    # This state tried to execute unmapped memory → drop it
+                    pass
 
-            simgr.active = next_active
-            if not simgr.active:
-                break
+            # Replace active states with survivors
+            simgr.active = new_active
 
-            simgr.step()
-            steps += 1
-
+            # Trim state explosion
             if len(simgr.active) > MAX_ACTIVE:
                 simgr.active = simgr.active[:MAX_ACTIVE]
+
+            steps += 1
 
         return state
 
