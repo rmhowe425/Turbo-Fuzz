@@ -1,7 +1,7 @@
 import claripy
 from src.io import io
 from claripy.ast import BV
-from angr import exploration_techniques, Project, SimFile, SimState, BP_BEFORE
+from angr import exploration_techniques, options, Project, SimFile, SimState, BP_BEFORE
 
 
 class Fuzzer:
@@ -41,6 +41,9 @@ class Fuzzer:
         state = self.project.factory.full_init_state(
             args=["prog", "input.xls"]
         )
+        state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
+        state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
+
         state.fs.insert(
             "input.xls",
             SimFile(
@@ -50,7 +53,7 @@ class Fuzzer:
                 has_end=True
             )
         )
-        state.preconstrainer.preconstrain(concrete_bvv, sym_file)
+        state.preconstrainer.preconstrain(sym_file, concrete_bvv)
         return {'state': state, 'bit vector': sym_file}
 
     def create_branch_hook(self, state: SimState) -> dict:
@@ -152,9 +155,11 @@ class Fuzzer:
             state_copy.preconstrainer.remove_preconstraints()
             flipped = claripy.Not(cond)
             state_copy.solver.add(flipped)
+            state_copy.solver.timeout = 2000
 
             if state_copy.solver.satisfiable():
-                new_input = state_copy.solver.eval(state_copy.posix.stdin.load(0, input_len),
+                simfile = state_copy.fs.get("input.xls")
+                new_input = state_copy.solver.eval(simfile.load(0, input_len),
                                                    cast_to=bytes
                                                    )
                 seeds.append(new_input)
