@@ -93,12 +93,11 @@ class Fuzzer:
 
         return {'state': state, 'branch log': fork_log}
 
-    from angr.errors import SimEngineError
 
     def execute_simulation_manager(self, state: SimState) -> SimState:
         simgr = self.project.factory.simgr(state)
 
-        # Only LoopSeer — no Veritesting to reduce symbolic jumps
+        # Use LoopSeer, no Veritesting for safer control-flow
         simgr.use_technique(exploration_techniques.LoopSeer(bound=3))
 
         MAX_ACTIVE = 40
@@ -106,21 +105,22 @@ class Fuzzer:
         steps = 0
 
         while simgr.active and steps < MAX_STEPS:
-            # Step and let angr categorize errors into simgr.errored
+            # Step all active states once
             simgr.step()
 
-            # Remove errored states — drop them
+            # If any states errored, remove them
             if simgr.errored:
-                # Clear errored stash and drop states
-                simgr.errored = []
+                # For each ErrorRecord, drop its state from active
+                for rec in simgr.errored:
+                    bad_state = rec.state
+                    simgr.drop(lambda s: s is bad_state, stash="active")
+                # Clear the errored list to reset
+                simgr.errored.clear()
 
-            # Optionally filter out states with symbolic IP so they don't continue
-            simgr.active = [
-                st for st in simgr.active
-                if not st.solver.symbolic(st.regs.ip)
-            ]
+            # Drop any states with symbolic IP to avoid further invalid jumps
+            simgr.drop(lambda s: s.solver.symbolic(s.regs.ip), stash="active")
 
-            # Trim explosion
+            # Cap active states
             if len(simgr.active) > MAX_ACTIVE:
                 simgr.active = simgr.active[:MAX_ACTIVE]
 
