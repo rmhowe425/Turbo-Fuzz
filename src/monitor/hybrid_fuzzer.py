@@ -1,8 +1,6 @@
 import claripy
-from src.io import io
 from claripy.ast import BV
-from angr.errors import SimEngineError
-from angr import exploration_techniques, options, Project, SimFile, SimState, BP_BEFORE
+from angr import options, Project, SimState, BP_BEFORE
 
 
 class Fuzzer:
@@ -16,40 +14,50 @@ class Fuzzer:
                                auto_load_libs=False
                                )
 
-    def build_angr_state(self, f_path: str) -> dict:
+    def build_angr_state(self, frontier_seed: bytes) -> dict:
         """
-        Builds an angr state that calls LLVMFuzzerTestOneInput with
-        a symbolic byte buffer and symbolic size.
+        Builds an angr state that calls LLVMFuzzerTestOneInput
+        with the given frontier seed.
+
+        Parameters
+        ----------
+        frontier_seed : bytes
+            The concrete bytes from a frontier seed (from AFL++ queue).
+        Returns
+        -------
+        Dictionary containing the angr state object and the symbolic buffer.
         """
+        # Frontier seed bytes
+        input_bytes = frontier_seed
+        input_len = len(input_bytes)
 
-        # size of symbolic input (tune as needed)
-        SYM_BUFFER_SIZE = 256
+        # Create a symbolic buffer for the input
+        symbuf = claripy.BVS("symbuf", input_len * 8)
 
-        # Create symbolic buffer & symbolic size
-        symbuf = claripy.BVS("symbuf", 8 * SYM_BUFFER_SIZE)
-        symsize = claripy.BVS("symsize", 64)  # size_t is 64 bits on most systems
+        # Constrain the symbolic buffer to equal the concrete frontier seed
+        concrete_bvv = claripy.BVV(input_bytes, input_len * 8)
 
-        # Find the address of the fuzz target function
-        fuzz_sym = self.project.loader.find_symbol("LLVMFuzzerTestOneInput")
-        if fuzz_sym is None:
-            raise RuntimeError("Could not find LLVMFuzzerTestOneInput symbol")
-        fuzz_addr = fuzz_sym.rebased_addr
+        # Find the fuzz target function address
+        fuzz_func = self.project.loader.find_symbol("LLVMFuzzerTestOneInput")
+        if fuzz_func is None:
+            raise RuntimeError("Could not find LLVMFuzzerTestOneInput in binary")
 
-        # Create a call_state that simulates calling the function
-        # with (symbuf, symsize) arguments
+        fuzz_addr = fuzz_func.rebased_addr
+
+        # Build a call_state for the harness function with (symbuf, input_len)
         state = self.project.factory.call_state(
             fuzz_addr,
             symbuf,
-            symsize,
+            input_len
         )
 
-        # Safety options to reduce solver blow‑up
+        # Apply safety & performance options
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_MEMORY)
         state.options.add(options.ZERO_FILL_UNCONSTRAINED_REGISTERS)
         state.options.add(options.NO_SYMBOLIC_JUMP_RESOLUTION)
 
-        # You could also constrain symsize if desired:
-        # state.solver.add(symsize <= SYM_BUFFER_SIZE)
+        # Pre‑constrain buffer so it initially matches the frontier seed
+        state.solver.add(symbuf == concrete_bvv)
 
         return {"state": state, "bit vector": symbuf}
 

@@ -55,9 +55,11 @@ class Monitor:
             metrics = io.read_fuzzer_stats(f_path=self.config[sanitizer] + '/fuzzer_stats')
             if self._check_fuzzer_plateau(metrics=metrics):
                 logging.info(f"[*] Symbolic execution needed for {sanitizer}")
+                f_path = io.get_frontier_seed(f_path=self.config[sanitizer] + '/queue')
+                frontier_seed = io.read_frontier_seed(f_path=f_path)
 
                 try:
-                    state_dict = self.fuzzer.build_angr_state(f_path=self.config[sanitizer])
+                    state_dict = self.fuzzer.build_angr_state(f_path=self.config[sanitizer], frontier_seed=frontier_seed)
                     hook_dict = self.fuzzer.create_branch_hook(state=state_dict['state'])
                     state_sim_mgr = self.fuzzer.execute_simulation_manager(state=hook_dict['state'])
                     seeds = self.fuzzer.generate_new_seeds(
