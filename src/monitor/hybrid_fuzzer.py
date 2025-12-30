@@ -115,6 +115,17 @@ class Fuzzer:
         simgr.use_technique(exploration_techniques.LoopSeer(bound=4))
 
         while simgr.active and steps < MAX_STEPS:
+            next_active = []
+            for st in simgr.active:
+                # if the instruction pointer is symbolic, drop the state
+                if st.solver.symbolic(st.regs.ip):
+                    continue
+                next_active.append(st)
+
+            simgr.active = next_active
+            if not simgr.active:
+                break
+
             simgr.step()
             steps += 1
 
