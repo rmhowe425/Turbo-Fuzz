@@ -45,14 +45,16 @@ class Monitor:
         Monitors fuzzing coverage for all fuzzers
         to determine whether seed corpus enrichment is needed.
         """
-        for sanitizer in self.config:
+        sanitizers = list(self.config.keys())[1:]
+
+        for sanitizer in sanitizers:
             if not self.config[sanitizer]:
                 logging.info(f"[*] Sanitizer `{sanitizer}` not in use.")
                 continue
 
-            metrics = io.read_fuzzer_stats(f_path=self.config[sanitizer])
+            metrics = io.read_fuzzer_stats(f_path=self.config[sanitizer] + '/fuzzer_stats')
 
-            if self._check_fuzzer_plateau(metrics=metrics):
+            if not self._check_fuzzer_plateau(metrics=metrics):
                 logging.info(f"[*] Symbolic execution needed for {sanitizer}")
 
                 try:

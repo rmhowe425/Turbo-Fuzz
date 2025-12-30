@@ -1,7 +1,7 @@
 import claripy
 from src.io import io
 from claripy.ast import BV
-from angr import Project, SimFileStream, SimState, BP_BEFORE
+from angr import exploration_techniques, Project, SimFile, SimState, BP_BEFORE
 
 
 class Fuzzer:
@@ -29,22 +29,29 @@ class Fuzzer:
         -------
         Dictionary containing the Angr state object and bit vector.
         """
-        queue_dir = '/queue1'
+        queue_dir = '/queue'
         frontier_seed = io.get_frontier_seed(f_path=f_path + queue_dir)
 
         if not frontier_seed:
             raise RuntimeError("`frontier_seed` cannot be an empty string.")
 
         input_bytes = io.read_frontier_seed(f_path=frontier_seed)
-        sym_stdin = claripy.BVS("stdin", len(input_bytes) * 8)
+        sym_file = claripy.BVS("xls_file", len(input_bytes) * 8)
+        concrete_bvv = claripy.BVV(input_bytes, len(input_bytes) * 8)
         state = self.project.factory.full_init_state(
-            stdin=SimFileStream(
+            args=["prog", "input.xls"]
+        )
+        state.fs.insert(
+            "input.xls",
+            SimFile(
                 name="input.xls",
-                content=sym_stdin
+                content=sym_file,
+                size=len(input_bytes),
+                has_end=True
             )
         )
-        state.preconstrainer.preconstrain(sym_stdin, input_bytes)
-        return {'state': state, 'bit vector': sym_stdin}
+        state.preconstrainer.preconstrain(concrete_bvv, sym_file)
+        return {'state': state, 'bit vector': sym_file}
 
     def create_branch_hook(self, state: SimState) -> dict:
         """
@@ -62,20 +69,23 @@ class Fuzzer:
         Dictionary containing Angr state and list of
         control flow transitions.
         """
-        branch_log = []
+        fork_log = []
+        MAX_BRANCHES = 200
 
-        def branch_inspect(state):
+        def on_fork(state):
+            if len(fork_log) >= MAX_BRANCHES:
+                return
             guard = state.inspect.condition
             target = state.inspect.true_target
-            branch_log.append((state.addr, guard, target))
+            fork_log.append((state.addr, guard, target))
 
         state.inspect.b(
-            "branch",
+            "fork",
             when=BP_BEFORE,
-            action=branch_inspect
+            action=on_fork
         )
 
-        return {'state': state, 'branch log': branch_log}
+        return {'state': state, 'branch log': fork_log}
 
     def execute_simulation_manager(self, state: SimState) -> SimState:
         """
@@ -92,8 +102,20 @@ class Fuzzer:
         -------
         Updated state object.
         """
+        steps = 0
+        MAX_ACTIVE = 40
+        MAX_STEPS = 200
         simgr = self.project.factory.simgr(state)
-        simgr.run()
+        simgr.use_technique(exploration_techniques.Veritesting())
+        simgr.use_technique(exploration_techniques.LoopSeer(bound=4))
+
+        while simgr.active and steps < MAX_STEPS:
+            simgr.step()
+            steps += 1
+
+            if len(simgr.active) > MAX_ACTIVE:
+                simgr.active = simgr.active[:MAX_ACTIVE]
+
         return state
 
     def generate_new_seeds(self,
